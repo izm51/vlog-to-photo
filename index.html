@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vlogから写真を取り出す</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+/* VOICE: calm, practical, a little bit photo-lab
+   IDEA: a film strip / contact sheet you pick prints from
+   PICTURE: the video viewer itself, with a sprocketed strip of picked frames beneath
+   COLOUR and TYPE: white ground, deep ink, shutter red accent; Zen Kaku Gothic New
+   LAYOUT: one column: viewer → controls → strip → save */
+:root{color-scheme:dark;--bg:light-dark(#ffffff,#121316);--ink:light-dark(#16181d,#eceef2);--mut:light-dark(#5d6370,#a2a8b4);--line:light-dark(#e3e5ea,#2a2d34);--soft:light-dark(#f4f5f7,#1b1d22);--red:#e8432b;--film:#1a1b1f;--hole:#fff3;--filmink:#aab}
+:root,:root[data-theme]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 "Zen Kaku Gothic New",system-ui,sans-serif;overflow-x:clip}
+.wrap{max-width:900px;margin:0 auto;padding:20px max(4vw,14px) 60px}
+h1{font-size:clamp(24px,5vw,34px);line-height:1.15;margin:4px 0 6px;font-weight:900;text-wrap:balance}
+.feats{margin:0 0 18px;padding:0;list-style:none;font-size:15px}
+.feats li{position:relative;padding-left:18px;margin:3px 0}
+.feats li::before{content:"";position:absolute;left:3px;top:.62em;width:7px;height:7px;border-radius:50%;background:var(--red)}
+.lead{color:var(--mut);margin:0 0 10px;font-size:15px}
+.drop{display:grid;place-items:center;text-align:center;gap:8px;border:2px dashed var(--line);border-radius:16px;padding:42px 16px;background:var(--soft);cursor:pointer}
+.drop:hover,.drop.on{border-color:var(--red)}
+.drop b{font-size:18px}.drop small{color:var(--mut)}
+input[type=file]{display:none}
+.viewer{display:none;background:#000;border-radius:14px;overflow:hidden;position:relative}
+.viewer video{display:block;width:100%;max-height:62vh;background:#000}
+.viewer.fit{max-height:none}.viewer.fit video{position:absolute;max-height:none;max-width:none;object-fit:fill}
+.flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+.flash.go{opacity:.7;transition:none}
+input[type=range]{width:100%;accent-color:var(--red);height:44px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+button,.btn{font:inherit;font-size:15px;min-height:44px;padding:0 14px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);cursor:pointer;white-space:nowrap}
+button:focus-visible,.drop:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+button:disabled{opacity:.45;cursor:default}
+.panel{display:none;margin-top:14px}
+label.sl{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--mut)}
+label.sl input{flex:1}
+.bar{height:8px;background:var(--soft);border-radius:4px;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;width:0;background:var(--red);transition:width .2s}
+
+.big{display:flex;align-items:baseline;gap:4px}
+.big b{font-size:44px;line-height:1;font-weight:900;font-variant-numeric:tabular-nums}
+.big span{font-size:20px;font-weight:700}
+.fr .a{position:absolute;left:5px;top:4px;font-size:12px;color:#fff;background:var(--red);padding:0 6px;border-radius:4px}
+.fr .a.e{background:#2b7de9}
+.prev>div{width:min(100%,760px)}
+.prev canvas{display:block;width:100%;border-radius:8px;background:#000}
+.cands{display:flex;gap:6px;overflow-x:auto;padding:8px 0 2px}
+.cands button{flex:none;padding:0;border:3px solid transparent;border-radius:6px;overflow:hidden;min-height:0;background:#000;width:96px}
+.cands button.on{border-color:var(--red)}
+.cands img{display:block;width:100%}
+.cands span{display:block;font-size:12px;color:#fff;background:#222;text-align:center}
+.prev .row button{background:#2a2c32;color:#fff;border-color:#444}
+.prev .row button.primary{background:#fff;color:#111}
+.prev .row button.rep{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+.prev .lbl{color:#ccd;font-size:13px;margin-top:10px}
+.strip{background:var(--film);border-radius:10px;margin-top:18px;padding:16px 10px;position:relative}
+.strip::before,.strip::after{content:"";position:absolute;left:8px;right:8px;height:6px;background:repeating-linear-gradient(90deg,var(--hole) 0 10px,transparent 10px 22px);border-radius:2px}
+.strip::before{top:5px}.strip::after{bottom:5px}
+.frames{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.fr{position:relative;border-radius:6px;overflow:hidden;background:#000;aspect-ratio:16/9;outline:3px solid transparent;cursor:pointer}
+.fr.sel{outline-color:var(--red)}
+.fr img{width:100%;height:100%;object-fit:cover;display:block}
+.fr .t{position:absolute;left:5px;bottom:4px;font-size:12px;color:#fff;background:#0009;padding:0 6px;border-radius:4px}
+.fr .ck{position:absolute;right:6px;top:6px;width:24px;height:24px;border-radius:50%;border:2px solid #fff;background:#0005;display:grid;place-items:center;color:#fff;font-size:14px}
+.fr.sel .ck{background:var(--red);border-color:var(--red)}
+.empty{color:var(--filmink);text-align:center;padding:22px 8px;font-size:14px;grid-column:1/-1}
+.primary{background:var(--ink);color:var(--bg);border-color:var(--ink);font-weight:700}
+.note{font-size:13px;color:var(--mut);margin-top:10px}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:90vw;text-align:center}
+.toast.on{opacity:1}
+.prev{position:fixed;inset:0;background:#000f;display:none;place-items:start center;padding:16px;z-index:5;overflow-y:auto}
+.prev.on{display:grid}
+.prev img{max-width:100%;max-height:72vh;border-radius:8px}
+.prev .row{justify-content:center;margin-top:12px}
+.prev .info{color:#ccd;font-size:13px;text-align:center;margin-top:8px}
+.filebar{display:flex;align-items:center;gap:10px;margin-bottom:8px;font-size:14px;color:var(--mut)}
+.filebar .fn{color:var(--ink);font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.filebar #res{white-space:nowrap}
+.link{border:0;background:none;color:var(--red);font-weight:700;padding:0 4px;min-height:40px}
+.seekrow{display:flex;align-items:center;gap:10px}.seekrow input{flex:1}.seekrow span{font-size:13px;color:var(--mut);white-space:nowrap;font-variant-numeric:tabular-nums}
+.ctrl button{flex:1 1 56px;padding:0 6px}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.actions button{flex:1 1 200px;min-height:54px;font-size:17px}
+.go{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+.ghost{font-weight:700}
+.hint{font-size:13px;color:var(--mut);margin:8px 2px 0}
+
+.prog{display:none;margin-top:10px;border:1px solid var(--line);border-radius:14px;padding:14px}
+.prog.on{display:block}
+.ck2{display:flex;align-items:flex-start;gap:10px;min-height:44px;padding-top:8px;cursor:pointer;font-size:15px}
+.ck2 input{width:22px;height:22px;margin:1px 0 0;accent-color:var(--red);flex:none}
+.ck2 span{display:flex;flex-direction:column}.ck2 small{color:var(--mut);font-size:13px}
+.pgrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}
+.pgrid div{background:var(--soft);border-radius:10px;padding:8px 10px;display:flex;flex-direction:column}
+.pgrid span{font-size:12px;color:var(--mut);white-space:nowrap}
+.pgrid b{font-size:17px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.ptime{display:flex;flex-wrap:wrap;gap:4px 18px;margin:10px 0 0;font-size:14px;color:var(--mut);white-space:nowrap}
+.ptime b{color:var(--ink);font-variant-numeric:tabular-nums}
+@media(max-width:380px){.pgrid{grid-template-columns:1fr 1fr}.pgrid div:last-child{grid-column:1/-1}}
+.prog .row{margin-top:10px}
+.opts{margin-top:14px;border-top:1px solid var(--line);padding-top:6px}
+.opts summary{cursor:pointer;min-height:44px;display:flex;align-items:center;gap:6px;font-weight:700;font-size:15px;color:var(--mut);list-style:none;border-radius:8px;padding:0 6px;margin:0 -6px}
+.opts summary::-webkit-details-marker{display:none}
+.opts summary::before{content:"";width:0;height:0;border-style:solid;border-width:5px 0 5px 8px;border-color:transparent transparent transparent currentColor;transition:transform .15s}
+.opts[open] summary::before{transform:rotate(90deg)}
+.opts summary:hover{background:var(--soft)}
+.opts summary:focus-visible{outline:3px solid var(--red);outline-offset:2px}
+.opts>:not(summary){margin-left:20px}
+.opts[open] summary{color:var(--ink)}
+.optl{font-size:14px;font-weight:700;margin:10px 0 2px}
+.opts .sl{margin-top:6px}.opts .sl.col{flex-direction:column;align-items:stretch;gap:4px;margin-top:12px}
+.opts select{font:inherit;font-size:16px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:0 8px;flex:1}
+.results{display:none;margin-top:28px;border-top:1px solid var(--line);padding-top:18px}
+.results.on{display:block}
+.rhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rhead h2{font-size:20px;margin:0}.rhead h2 span{font-size:15px;color:var(--mut);font-weight:400}
+.results .strip{margin-top:12px}
+.savebar{position:sticky;bottom:0;display:flex;gap:8px;padding:12px 0;background:var(--bg);z-index:2}
+.savebar .go{flex:1;min-height:52px;font-size:17px}
+.phead{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.phead #pclose{margin-left:auto}
+.prev .nav{min-width:52px;font-size:26px;line-height:1;padding:0 10px;background:#2a2c32;color:#fff;border-color:#444}
+.prev .nav:disabled{opacity:.3}
+.pcount{color:#fff;font-weight:700;font-variant-numeric:tabular-nums;min-width:64px;text-align:center;white-space:nowrap}
+.pinfo{text-align:left;margin:0 0 8px}
+#pcv{touch-action:pan-y}
+.toast{white-space:pre-line}
+/* 中央揃えの文だけ、行の長さをそろえて文節で折り返す */
+.drop small,.toast,.empty{text-wrap:balance;word-break:auto-phrase}
+.pstate{margin:2px 0 0;font-size:14px;color:var(--mut);white-space:pre-line}
+.pinfo{display:flex;flex-wrap:wrap;gap:2px 12px}.pinfo span{white-space:nowrap}
+.spin{display:none;position:absolute;inset:0;place-items:center;background:#0006;z-index:3}
+.drop .spin{background:var(--soft);border-radius:14px}
+.spin::after{content:"";width:40px;height:40px;border-radius:50%;border:4px solid #fff5;border-top-color:#fff;animation:rot .8s linear infinite}
+.drop .spin::after{border-color:var(--line);border-top-color:var(--red)}
+.busy>.spin{display:grid}
+.viewer.busy:not(.fit){aspect-ratio:16/9}.viewer.busy:not(.fit) video{visibility:hidden}
+.drop{position:relative}
+@keyframes rot{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spin::after{animation-duration:2.4s}}
+.preason{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:light-dark(#fdecea,#3a1d1a);color:var(--ink);font-size:14px}
+.preason b{display:inline-block;margin-right:8px;color:var(--red)}
+.preason small{display:block;color:var(--mut);font-size:12px;margin-top:2px;overflow-wrap:anywhere}
+.pwarn{color:#ffd28a;font-size:13px;text-align:center;margin:8px 0 0}
+.pwrap{position:relative}
+.pgone{display:none;position:absolute;inset:0;place-items:center;color:#fff;font-weight:700;background:#000a;border-radius:8px}
+.prev.gone .pgone{display:grid}
+.datebox{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--soft)}
+.daterow{display:flex;align-items:center;gap:12px;font-size:15px;font-weight:700}
+.daterow input{flex:1;max-width:240px;font:inherit;font-size:16px;font-weight:400;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:0 12px}
+.datebox .hint{margin:8px 0 0}
+.taphint{margin-top:14px}
+.fr .t.g{opacity:.75;font-style:italic}
+.ptagrow{display:flex;justify-content:flex-end;margin:6px 0 2px}
+.ptag{position:relative;display:inline-flex;align-items:center;gap:6px;padding:4px 2px;color:#ccd;font-size:13px;cursor:pointer;min-height:32px}
+.ptag .ptime-v{color:#fff;display:inline-flex;align-items:center;gap:3px;font-weight:700;font-variant-numeric:tabular-nums}
+.ptag u{text-decoration:none;border-bottom:1.5px solid currentColor;padding-bottom:1px;line-height:1.2}
+.ptag svg{width:12px;height:12px}
+.ptag small{color:#ccd;font-size:11px}
+.ptag input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px;border:0;padding:0}
+.ptag:has(input:focus-visible){outline:2px solid #fff;outline-offset:2px}
+.dlg{position:fixed;inset:0;z-index:20;display:none;place-items:center;padding:20px;background:#0008}
+.dlg.on{display:grid}
+.dlgbox{width:min(100%,380px);background:var(--bg);color:var(--ink);border-radius:16px;padding:20px;box-shadow:0 10px 40px #0005}
+.dlgbox h3{margin:0 0 8px;font-size:18px}
+.dlgbox p{margin:0 0 18px;font-size:15px;color:var(--mut)}
+.dlgbtns{display:flex;gap:10px}.dlgbtns button{flex:1}
+@media(prefers-reduced-motion:reduce){.flash{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Vlogから写真を取り出す</h1>
+  <p class="lead">動画の好きなシーンを、写真にして取り出せます。動画はこの端末の中だけで処理されるので、どこにも送信されません。</p>
+  <ul class="feats">
+    <li>setlogのvlogを、シーンごとに写真にできる</li>
+    <li>ブレが少ないコマを、自動でえらんでくれる</li>
+    <li>お気に入りの写真は、まとめて保存OK</li>
+  </ul>
+
+  <label class="drop" id="drop" tabindex="0">
+    <b>動画を選ぶ</b>
+    <small>写真アプリやファイルから選べます。パソコンならドラッグ＆ドロップでもOKです。</small>
+    <input type="file" id="file" accept="video/*">
+    <div class="spin" aria-hidden="true"></div>
+  </label>
+
+  <section class="panel" id="panel">
+    <div class="filebar"><span class="fn" id="name"></span><span id="res"></span><button class="link" id="other">別の動画</button></div>
+    <div class="viewer" id="viewer">
+      <video id="v" playsinline muted preload="auto"></video>
+      <div class="flash" id="flash"></div>
+      <div class="spin" aria-hidden="true"></div>
+    </div>
+    <div class="seekrow"><input type="range" id="seek" min="0" max="1000" value="0" step="1" aria-label="再生位置"><span id="pos">0:00.00 / 0:00.00</span></div>
+    <div class="row ctrl">
+      <button data-d="-1" aria-label="1秒戻る">−1秒</button>
+      <button data-d="-0.0334" aria-label="1コマ戻る">◀ コマ</button>
+      <button id="play">再生</button>
+      <button data-d="0.0334" aria-label="1コマ進む">コマ ▶</button>
+      <button data-d="1" aria-label="1秒進む">＋1秒</button>
+    </div>
+
+    <div class="actions">
+      <button id="shoot" class="ghost">今のシーンを1枚撮る</button>
+      <button id="auto" class="go" disabled>自動で取り出す</button>
+    </div>
+    <p class="hint" id="autoHint">「自動で取り出す」を押すと、シーンの切り替わりを見つけて、それぞれからくっきりした1枚をえらびます。</p>
+
+    <details class="opts" id="opts">
+      <summary>詳しい設定</summary>
+      <label class="ck2"><input type="checkbox" id="cropOn" checked><span>上下左右の黒い帯を切り取る<small id="cropInfo"></small></span></label>
+      <div class="optl">シーンの区切り方</div>
+      <label class="sl">細かく<input type="range" id="sens" min="1" max="10" value="4" aria-label="区切りの細かさ">大まかに</label>
+      <label class="sl col">切り替わりがなくても
+        <select id="maxLen"><option value="2.5" selected>2.5秒ごとに区切る（setlogの動画向け）</option><option value="5">5秒ごとに区切る</option><option value="10">10秒ごとに区切る</option><option value="0">区切らない</option></select></label>
+      <p class="hint">区切り方の変更は、次に「自動で取り出す」を押したときから反映されます。</p>
+    </details>
+
+    <div class="prog" id="prog">
+      <div class="big"><b id="pPct">0</b><span>%</span></div>
+      <p class="pstate" id="pState">準備中</p>
+      <p class="preason" id="pReason" hidden></p>
+      <div class="bar"><i id="barI"></i></div>
+      <div class="pgrid">
+        <div><span>検知したシーン</span><b id="pScene">0</b></div>
+        <div><span>抽出した写真</span><b id="pShot">0枚</b></div>
+        <div><span>確認済み</span><b id="pPos">0:00 / 0:00</b></div>
+      </div>
+      <p class="ptime"><span>経過 <b id="pEl">0秒</b></span><span>残り <b id="pRem">計算中</b></span></p>
+      <div class="row"><button id="stop">ここで止める</button><button id="resume" class="go" style="display:none">続きから再開</button></div>
+    </div>
+
+  </section>
+
+  <section class="results" id="results">
+    <div class="rhead"><h2>取り出した写真 <span id="count"></span></h2><button class="link" id="all">すべて選択</button></div>
+    <div class="datebox">
+      <div class="daterow"><label for="shootDate">撮影日</label><input type="date" id="shootDate"></div>
+      <p id="clockNote" class="hint"></p>
+    </div>
+    <p class="hint taphint">写真をタップすると、大きく見たり、別のコマに差し替えたり、時刻を直したりできます。右上の○で選んだ写真だけを、保存・削除することもできます。</p>
+    <div class="strip"><div class="frames" id="frames"></div></div>
+    <div class="savebar">
+      <button id="del">選んだ写真を削除</button>
+      <button id="save" class="go">すべて保存</button>
+    </div>
+    <p class="note">2枚以上はZIPファイルでまとめて保存されます。iPhoneの写真アプリに入れたいときは、写真をタップして1枚ずつ保存し、共有メニューの「画像を保存」を選んでください。</p>
+  </section>
+</div>
+
+<div class="prev" id="prev"><div>
+  <div class="phead">
+    <button class="nav" id="pprev" aria-label="前の写真">‹</button><span class="pcount" id="pcount"></span><button class="nav" id="pnext" aria-label="次の写真">›</button>
+    <button id="pclose" aria-label="閉じる">閉じる</button>
+  </div>
+  <div class="info pinfo" id="pinfo"></div>
+  <div class="pwrap"><canvas id="pcv" aria-label="写真の確認"></canvas><div class="pgone">この写真は削除しました</div></div>
+  <div class="ptagrow"><label class="ptag" id="ptag">撮影時刻 <span class="ptime-v"><u id="ptagTime">--:--</u><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.3 1.7a1.5 1.5 0 0 1 2.1 0l.9.9a1.5 1.5 0 0 1 0 2.1L5.6 13.4 2 14l.6-3.6z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></span><small id="ptagGuess"></small><input type="time" id="pclock" aria-label="撮影時刻を直す"></label></div>
+  <div class="row"><button id="psave" class="primary">この写真を保存</button><button id="pdel">削除</button></div>
+  <div id="edit">
+    <div class="lbl">別のコマに差し替える</div>
+    <div class="cands" id="cands"></div>
+    <div class="row">
+      <button data-n="-0.5">−0.5秒</button><button data-n="-0.0334">◀ コマ</button><button data-n="0.0334">コマ ▶</button><button data-n="0.5">＋0.5秒</button>
+    </div>
+    <div class="row"><button id="prep" class="rep" disabled>この位置で差し替え</button><button id="preset" disabled>元に戻す</button></div>
+    <p class="pwarn" id="pwarn" hidden>位置を変えています。「この位置で差し替え」か「元に戻す」を押すと、ほかの写真に移れます。</p>
+  </div>
+  <p class="info" id="pbusy" style="display:none">自動で取り出している間は差し替えできません。止めてから調整してください。</p>
+</div></div>
+<div class="dlg" id="dlg" role="dialog" aria-modal="true" aria-labelledby="dlgT"><div class="dlgbox">
+  <h3 id="dlgT"></h3><p id="dlgM"></p>
+  <div class="dlgbtns"><button id="dlgNo">キャンセル</button><button id="dlgYes" class="go"></button></div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+const v=$('v'),seek=$('seek');
+let vidName='video',frames=[],uid=0,running=false,downloads=null,cur=null;
+if(window.claude&&claude.use)claude.use('downloads').then(d=>{downloads=d}).catch(()=>{});
+
+const esc=x=>String(x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]);
+const fmt=t=>{t=Math.max(0,t||0);const m=Math.floor(t/60),s=(t%60).toFixed(2).padStart(5,'0');return m+':'+s};
+const stamp=t=>{const m=Math.floor(t/60),s=Math.floor(t%60),c=Math.round((t%1)*100)%100;return String(m).padStart(2,'0')+'m'+String(s).padStart(2,'0')+'s'+String(c).padStart(2,'0')};
+let tt;const toast=m=>{const e=$('toast');e.textContent=m;e.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>e.classList.remove('on'),2600)};
+
+async function load(f){
+  if(running){toast('自動で取り出している間は、動画を変えられません。止めてから選んでください。');return}
+  if(!f||!f.type.startsWith('video')&&!/\.(mp4|mov|m4v|webm)$/i.test(f.name)){toast('動画ファイルを選んでください');return}
+  const my=++pickTok;
+  vidName=f.name.replace(/\.[^.]+$/,'')||'video';
+  loadedOnce=false;drop.classList.add('busy');
+  /* 選んだファイルを最初にメモリへ読み込んでおく。スマホでは時間がたったりアプリを切り替えたりすると、
+     元のファイルを読めなくなることがあるため（とても大きい動画は、メモリ不足を避けてそのまま使う） */
+  let src=f;
+  if(f.size<=MEM_LIMIT){try{src=new Blob([await f.arrayBuffer()],{type:f.type||'video/mp4'})}catch(e){src=f}}
+  if(my!==pickTok)return;
+  if(v.src)URL.revokeObjectURL(v.src);
+  curFile=src;$('shootDate').value='';
+  v.src=URL.createObjectURL(src);v.load();
+  $('name').textContent=f.name;
+  scan=null;$('prog').classList.remove('on');$('resume').style.display='none';$('auto').textContent='自動で取り出す';$('auto').className='go';$('autoHint').style.display='';
+}
+let pickTok=0;const MEM_LIMIT=600*1024*1024;
+$('file').addEventListener('change',e=>{load(e.target.files[0]);e.target.value=''});
+const drop=$('drop');
+drop.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();$('file').click()}});
+['dragover','dragenter'].forEach(n=>drop.addEventListener(n,e=>{e.preventDefault();drop.classList.add('on')}));
+['dragleave','drop'].forEach(n=>drop.addEventListener(n,()=>drop.classList.remove('on')));
+drop.addEventListener('drop',e=>{e.preventDefault();load(e.dataTransfer.files[0])});
+$('other').onclick=()=>$('file').click();
+
+let crop=null,cropReady=false,loadTok=0,curFile=null,loadedOnce=false,reloading=false;
+const R=()=>($('cropOn').checked&&crop)?crop:{x:0,y:0,w:v.videoWidth,h:v.videoHeight};
+v.addEventListener('loadedmetadata',async()=>{
+  if(reloading)return;loadedOnce=true;drop.classList.remove('busy');$('viewer').classList.add('busy');
+  drop.style.display='none';$('viewer').style.display='block';$('panel').style.display='block';
+  const my=++loadTok;upd();cropReady=false;crop=null;$('auto').disabled=true;$('shoot').disabled=true;$('cropInfo').textContent='帯の有無を確認中…';
+  await detectCrop();if(my!==loadTok)return;$('viewer').classList.remove('busy');cropReady=true;$('auto').disabled=false;$('shoot').disabled=false;showRes();
+});
+function showRes(){const r=R();layoutViewer(r);$('res').textContent=r.w+'×'+r.h+'ピクセル';
+  $('cropInfo').textContent=crop?'元 '+v.videoWidth+'×'+v.videoHeight+' → '+crop.w+'×'+crop.h:'この動画には黒い帯がありません'}
+$('cropOn').addEventListener('change',showRes);
+function layoutViewer(r){
+  const vw=$('viewer'),W=v.videoWidth,H=v.videoHeight;
+  if(!W)return;
+  vw.style.aspectRatio=r.w+'/'+r.h;vw.classList.add('fit');
+  Object.assign(v.style,{width:W/r.w*100+'%',height:H/r.h*100+'%',left:-r.x/r.w*100+'%',top:-r.y/r.h*100+'%'});
+}
+async function detectCrop(){
+  /* 見えている動画は動かさず、裏の見えない動画で調べる */
+  const dv=document.createElement('video');dv.muted=true;dv.playsInline=true;dv.preload='auto';
+  dv.setAttribute('playsinline','');dv.setAttribute('aria-hidden','true');
+  dv.style.cssText='position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+  document.body.appendChild(dv);
+  try{
+    dv.src=v.currentSrc||v.src;
+    await new Promise((ok,ng)=>{if(dv.readyState>=1)return ok();dv.addEventListener('loadedmetadata',ok,{once:true});dv.addEventListener('error',ng,{once:true})});
+    await cropFrom(dv);
+  }catch(e){crop=null}
+  finally{dv.removeAttribute('src');dv.load();dv.remove()}
+}
+async function cropFrom(v){
+  const W=v.videoWidth,H=v.videoHeight,sw=320,sh=Math.max(16,Math.round(320*H/W));
+  const c=document.createElement('canvas');c.width=sw;c.height=sh;const x=c.getContext('2d',{willReadFrequently:true});
+  const rowMax=new Float32Array(sh),colMax=new Float32Array(sw),d0=v.duration||0;
+  for(let k=1;k<=8;k++){
+    await seekTo(d0*k/9,v);x.drawImage(v,0,0,sw,sh);const d=x.getImageData(0,0,sw,sh).data;
+    for(let yy=0;yy<sh;yy++)for(let xx=0;xx<sw;xx++){const i=(yy*sw+xx)*4,l=Math.max(d[i],d[i+1],d[i+2]);if(l>rowMax[yy])rowMax[yy]=l;if(l>colMax[xx])colMax[xx]=l}
+  }
+  const T=30;let t=0,b=sh-1,l=0,r=sw-1;
+  while(t<b&&rowMax[t]<T)t++;while(b>t&&rowMax[b]<T)b--;while(l<r&&colMax[l]<T)l++;while(r>l&&colMax[r]<T)r--;
+  const fy=H/sh,fx=W/sw;
+  let y0=t?Math.ceil((t+1)*fy):0,y1=b<sh-1?Math.floor(b*fy):H,x0=l?Math.ceil((l+1)*fx):0,x1=r<sw-1?Math.floor(r*fx):W;
+  y0+=y0%2;x0+=x0%2;
+  const cw=x1-x0,ch=y1-y0;
+  crop=(cw*ch<W*H*0.95&&cw>W*0.2&&ch>H*0.2)?{x:x0,y:y0,w:cw-cw%2,h:ch-ch%2}:null;
+}
+v.addEventListener('error',()=>{
+  if(reloading)return;
+  if(!loadedOnce){drop.classList.remove('busy');toast('この動画は、このブラウザでは再生できない形式みたいです');return}
+  /* 一度読めた動画のエラーは、別アプリへの切り替えなどでブラウザが読み込みを打ち切ったもの */
+  /* 処理中のエラーは、処理側で読み直してやり直す */
+});
+function interrupt(r){if(!running||!scan)return;scan.interrupted=true;if(!scan.reason)scan.reason=r;endRun()}
+/* 中断の理由を、分かる言葉＋元のエラー内容で残す */
+function mediaErr(el){
+  const e=el&&el.error;if(!e)return {text:'動画を読み取れなくなりました',detail:''};
+  const m={1:'動画の読み込みが中止されました',2:'動画ファイルを読めなくなりました',3:'動画のコマを読み取れませんでした（デコードの失敗）',4:'動画を開けなくなりました'};
+  return {text:m[e.code]||'動画でエラーが起きました',detail:'MediaError '+e.code+(e.message?'：'+e.message:'')};
+}
+function errReason(e){
+  const msg=e&&e.message||'';
+  if(msg==='seek-timeout')return {text:'再生位置を動かせなくなりました（6秒以上応答がありません）',detail:'seek-timeout @'+fmt(v.currentTime)};
+  if(msg==='video-error')return mediaErr(v);
+  if(msg==='encode-timeout')return {text:'写真の書き出しが終わりませんでした（15秒以上応答がありません）',detail:'encode-timeout'};
+  return {text:'予期しないエラーが起きました',detail:((e&&e.name)||'Error')+(msg?'：'+msg:'')};
+}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)interrupt({text:'別のアプリや画面に切り替わりました',detail:''})});
+/* 動画が使えなくなっていたら、選んだファイルから読み直す */
+async function ensureVideo(force){
+  if(!curFile)return false;
+  if(!force&&!v.error&&v.readyState>=1&&v.videoWidth)return true;
+  reloading=true;$('viewer').classList.add('busy');
+  try{
+    const keep=v.currentTime||0;
+    if(v.src)URL.revokeObjectURL(v.src);
+    v.src=URL.createObjectURL(curFile);v.load();
+    await new Promise((ok,ng)=>{const tm=setTimeout(()=>ng(new Error('timeout')),10000);
+      v.addEventListener('loadedmetadata',()=>{clearTimeout(tm);ok()},{once:true});
+      v.addEventListener('error',()=>{clearTimeout(tm);ng(new Error('error'))},{once:true})});
+    await seekTo(Math.min(keep,(v.duration||0)-0.05));
+    showRes();return true;
+  }catch(e){toast('動画を読み直せませんでした。「別の動画」から選び直してください。');return false}
+  finally{reloading=false;$('viewer').classList.remove('busy')}
+}
+function upd(){const d=v.duration||0;$('pos').textContent=fmt(v.currentTime)+' / '+fmt(d);if(!seek.dragging)seek.value=d?Math.round(v.currentTime/d*1000):0}
+v.addEventListener('timeupdate',upd);v.addEventListener('seeked',upd);
+v.addEventListener('play',()=>$('play').textContent='一時停止');v.addEventListener('pause',()=>$('play').textContent='再生');
+seek.addEventListener('input',()=>{seek.dragging=true;if(v.duration)v.currentTime=seek.value/1000*v.duration});
+seek.addEventListener('change',()=>{seek.dragging=false});
+$('play').onclick=()=>{v.paused?v.play().catch(()=>{}):v.pause()};
+document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{v.pause();v.currentTime=Math.min(Math.max(0,v.currentTime+ +b.dataset.d),v.duration||0)});
+
+function seekTo(t,el){el=el||v;return new Promise((r,ng)=>{
+  if(el.error){ng(new Error('video-error'));return}
+  let tm;
+  const clean=()=>{clearTimeout(tm);el.removeEventListener('seeked',done);el.removeEventListener('error',bad)};
+  const bad=()=>{clean();ng(new Error('video-error'))};
+  const done=()=>{clean();
+    if(el.requestVideoFrameCallback){let ok=false;el.requestVideoFrameCallback(()=>{ok=true;r()});setTimeout(()=>{if(!ok)r()},250)}else setTimeout(r,60)};
+  if(Math.abs(el.currentTime-t)<0.001){setTimeout(r,30);return}
+  /* 一定時間たっても移動が終わらなければ失敗とみなす（固まらないように） */
+  tm=setTimeout(()=>{clean();ng(new Error('seek-timeout'))},6000);
+  el.addEventListener('seeked',done);el.addEventListener('error',bad);el.currentTime=t;
+})}
+
+
+/* ===== 映像の時計（setlogの右上の「07:22」）を読む =====
+   文字は等幅なので、決まった位置の4桁とコロンを、あらかじめ用意した数字の形と見比べて読む */
+const CLK={W:1280,H:716,CX:[1119.5,1148,1205,1233.5],COLX:1176.5,Y0:333,Y1:380,CW:28,GW:20,GH:32,SX:1090,SY:326,SW:172,SH:61};
+const CLK_T=(()=>{const src={"0": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAQAAAAAAAAAAAAAAAAABBQoRFRUQCQQBAAAAAAAAAAAAAw4lQ1pjYlc/IgwCAAAAAAAAAAMUQXeXnpmanpRxORABAAAAAAABEUaJnHpWR0dZfp2AOw0BAAAAAAgygp1nKg4ICBAub5x1KAYAAAABFmCfdisJAQAAAgoyfphQEAEAAAQrhppJDgIAAAAAAhNUnXchAgAACEGchS0GAAAAAAAACDmQjzMFAQENVqhxHgMAAAAAAAAFKYGeRAgAAxZnqWATAQAAAAAAAAMedKlTDAEEHHKlVA4BAAAAAAAAAhhqrF8RAQUgeaJODQAAAAAAAAABE2KrZxUCBCF9oEsMAAAAAAAAAAESX6tqFwMEIn2gSwwAAAAAAAAAARJeqmoXAwUheaFNDQAAAAAAAAABE2GrZxUCBBxzpFMOAAAAAAAAAAIYaaxgEgEDF2moXhIBAAAAAAAAAx5zqVQNAQEOWKhtGwIAAAAAAAAFKH+gRQgAAAhDnYErBQAAAAAAAAg3j5E1BgEABC2IlUQMAQAAAAACEVKeeiIDAAABF2KcbSQGAQAAAQkueppUEQEAAAEJNYSWWiAKBgcLJ2aceywGAAAAAAITS4yUakY4OUlymYhDDwEAAAAAAAMYSYCYlY2Ol5h7QhQDAAAAAAAAAAQSLU9ocHBlTCkPAwAAAAAAAAAAAAIGDhkfHxgNBQEAAAAAAAAAAAAAAAABAgMDAgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "1": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABBAcFAQAAAAAAAAAAAAAAAAAABA8oOSYJAAAAAAAAAAAAAAAAAQUaRn+YYBcCAAAAAAAAAAAAAAIMKFyPtMF6HQIAAAAAAAAAAAEEFDp0mIyPs3seAgAAAAAAAAAAAxpNhZdyQ2Gnex4CAAAAAAAAAAEHLnOHXSgYUqV7HgIAAAAAAAAAAAQaPDcaCA9RpXseAgAAAAAAAAAAAQQKCAMBDlGlex4CAAAAAAAAAAAAAAEAAAEOUaV7HgIAAAAAAAAAAAAAAAAAAQ5RpXseAgAAAAAAAAAAAAAAAAABDlGlex4CAAAAAAAAAAAAAAAAAAEOUaV7HgIAAAAAAAAAAAAAAAAAAQ5RpXseAgAAAAAAAAAAAAAAAAABDlGlex4CAAAAAAAAAAAAAAAAAAEOUaV7HgIAAAAAAAAAAAAAAAAAAQ5RpXseAgAAAAAAAAAAAAAAAAABDlGlex4CAAAAAAAAAAAAAAAAAAEOUaV7HgIAAAAAAAAAAAAAAAAAAQ5RpXseAgAAAAAAAAAAAAAAAAABDlGlex4CAAAAAAAAAAAAAAAAAAEOUaV7HgIAAAAAAAAAAAAAAAAAAQ5PonkeAgAAAAAAAAAAAAAAAAABDEOIZRkCAAAAAAAAAAAAAAAAAAAFHTwtCwAAAAAAAAAAAAAAAAAAAAEFCQcCAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "2": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQAAAAAAAAAAAAAAAAEECA4UFhMNBwIAAAAAAAAAAAEFESU8UmFkX1A1GAcBAAAAAAABCSROeJGbmpmcnoxfKwoBAAAAAAMeX46PdlpIRU5njp9xKgYAAAAAAx9aZkMiEAkHCxhEjqJbFgIAAAAACRwbDAQBAAABAxZYooUsBQAAAAABAgIBAAAAAAAABzeTmT4KAAAAAAAAAAAAAAAAAAAFLYudRAwBAAAAAAAAAAAAAAAAAAYykJo/CgEAAAAAAAAAAAAAAAABDEabii8GAAAAAAAAAAAAAAAAAAIbaKJsHAMAAAAAAAAAAAAAAAABDD+Sk0MMAQAAAAAAAAAAAAAAAAgoc59nHwQAAAAAAAAAAAAAAAAHJWSYdi8IAAAAAAAAAAAAAAABByFdlIA4DgEAAAAAAAAAAAAAAQciXZKGQA8CAAAAAAAAAAAAAAAGIl+Rg0UUAgAAAAAAAAAAAAAABiBfloNCEwMAAAAAAAAAAAAAAAckXZKCQxMDAAAAAAAAAAAAAAEGImCXgz8SAgAAAAAAAAAAAAAACCVgkoRBEgQBAQEBAQEBAAAAAAUjZ5yKSx4QDg4ODg4ODQoEAAACEliuvZBpXFlZWVlZWVlVQxkCAAQbbLa+r6elpaWlpaWlpZ57LwUAAQ01VVtbWlpaWlpaWlpaVkMZAgAAAgkODw8PDw8PDw8PDw8OCwQAAAAAAQEBAQEBAQEBAQEBAQEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "3": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQAAAAAAAAAAAAAAAAIGChAVFhQPCQMBAAAAAAAAAAIKGC5EV2JkYVU/Ig0DAAAAAAADFTljhZecmZeanpZ1QBQDAAAAAQ0/gZaIbFNFQ0ldg6OMRRABAAABDkJuWTMaDQgHCRIxdaiALAUAAAAEFSAVBwMBAAAAAgw6kJ9KDQEAAAECAwEAAAAAAAAABCF5pVsRAQAAAAAAAAAAAAAAAAADIHalWxEBAAAAAAAAAAAAAAAAAAcuhZ1MDQEAAAAAAAAAAAAAAQIGHFqbgS8HAAAAAAAAAQQHCAkNFSlWjo5MEwIAAAAAAAAHHztESFNogI+BThsEAAAAAAAAAQ9DgZacprS2l2IvDgEAAAAAAAAACixVY2ZvfYySi2o1DgIAAAAAAAACChIUFRoiMU59mns1CgAAAAAAAAAAAQEBAgMGEDV8pGwcAgAAAAAAAAAAAAAAAAACEEyfkDIFAQAAAAAAAAAAAAAAAAAHNZKfPgcAAAAAAAAAAAAAAAAAAAY0kKA/BwAAAAAAAAAAAAAAAAABC0KbljYGAQACBQQBAQAAAAAAAQYia6h6IgIAAxEnJBYLBgYGBgcNJl6emEoPAQAIJ2d6Zk4/NjI1PlJ3m5VZHQQAAAUeW4uam5SLiIqSm5Z6SRwFAQAAAQgbNUtea3FzcWlcQyYQBAAAAAAAAQMHDBQbHyEfGhIKBQEAAAAAAAAAAAABAQMDAwMDAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "4": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAwgGAgAAAAAAAAAAAAAAAAAAAAYeOS8QAgAAAAAAAAAAAAAAAAAFHmGZdykFAAAAAAAAAAAAAAAAAxhQncSWMwYAAAAAAAAAAAAAAAEPQIWgsZI0BgAAAAAAAAAAAAABCjN3kHiajjQGAAAAAAAAAAAAAAUkaZFoUJKONAYAAAAAAAAAAAAEGliNcDI9kY40BgAAAAAAAAAAAg9Fin86EjaRjjQGAAAAAAAAAAELMnqJShQJNJGONAYAAAAAAAAABydqjlkcBAY0kY40BgAAAAAAAAMcWpBrJQYBBjSRjjQGAAAAAAACEkeGfjYKAQEGNJGONAYAAAAAAQ06fIRGEQIAAQY0kY40BgAAAAEGKG+LVxsEAAABBjSRjjQGAAAABRxekmsrDQgHBwcMOZSQOQwGBAITSJibYDwzMzMzMzZbpaNcNy8gDSRvuLKXjYyMjIyMj6PMzKOOg1snHFB+hIB+fn5+fn6BmMbGl4F2UiIHFCAiIiIiIiIiIydPnp1PJyEWCQECAwMDAwMDAwMECTeSjzcJAwIBAAAAAAAAAAAAAAEGNJGONAYAAAAAAAAAAAAAAAAAAQYzjowzBgAAAAAAAAAAAAAAAAABBSt4dSsFAAAAAAAAAAAAAAAAAAACEzY1EgIAAAAAAAAAAAAAAAAAAAADCQkCAAAAAAAAAAAAAAAAAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "5": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQUJCgoKCgoKCgoJBgIAAAAAAAEKKEJISEhISEhISEMtDgEAAAAAAxtnoKGcm5ubm5ubkWEeBAAAAAAEJ4WthGpnZ2dnZ2dgQBMCAAAAAAYxjZRCGxYWFhYWFhUNBAAAAAAACDmShisGAgICAgICAgEAAAAAAAALQZR8IwQAAAAAAAAAAAAAAAAAAQ5Ll3QgAwAAAAAAAAAAAAAAAAABEFOZbBwDAAAAAAAAAAAAAAAAAAESXJxnIA8PEA4MBwMBAAAAAAAAARRlp3xLSlJUUEYyHQwDAAAAAAABFGSvp5COkZOUlItxRRwGAAAAAAEMPXJ4Z1pTU1psiKGVWh8EAAAAAAMOHBwXEg8PEhoyZp6cVBMBAAAAAAEDAwICAQECAwkkZ6iILAQAAAAAAAAAAAAAAAAAAQk3kKVGCQEAAAAAAAAAAAAAAAAAAyN8rlYNAQAAAAAAAAAAAAAAAAACHnWwXA8BAAAAAAAAAAAAAAAAAAQkfKtTDAEAAAAAAAAAAAAAAAABCTePnj8IAAAABAYDAQAAAAAAAgchZKN+JgMAAAMYKiARCAYGBgcPKV+alUoQAQABCDZzdFtFOTU3QVZ7nJFVGwQAAAEGLG6TnZmPio2UnJV3RhgFAQAAAAELJT9XZ3BzcmpbQSQPAwAAAAAAAAEECRAYHiAfGxEKBAEAAAAAAAAAAAAAAQIDAwMDAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "6": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQAAAAAAAAAAAAAAAAEECA0TFhURCgMAAAAAAAAAAAEEECQ8UV5jYlg5EwIAAAAAAAABCB5Ld5CZl5OVkWglBQAAAAAAAAkpZJKQdFlHQEFFNxYDAAAAAAEGJGmehEgiEAgHBwgIAwAAAAAAAhZWl4U+EQQBAAAAAAAAAAAAAAAINYWUSxICAAAAAAAAAAAAAAAAARNamnAiBAAAAAAAAAAAAAAAAAADJHuZTA8BAAECAgEAAAAAAAAAAQc3kYo0CwsTGh8dFg0GAgAAAAAACUeffC4iPltqcG9jSCgPAwAAAAEOVql7T2iEjIiFipWUekUXAwAAAhJhspOAgmVGNjI3TXWZi0cQAQADFmrBsn9HHQsFBQYOKGaggi0EAAMXbseoTxYEAAAAAAEJMoWjTQwBAxZrvIUoBQAAAAAAAAIXZaloFgMCEmGydB0CAAAAAAAAAA5UpXQcBQEMUad3IQMAAAAAAAAADlKldh0FAAc+mIYuBwAAAAAAAAARWqduGQQAAyiAmEsPAgAAAAAAAx5wqVwQAQABFFiZeC4JAQAAAAIPP5CYPwcAAAAGLHiaaysNBwYHEjZ5oW4fAgAAAAEOPYCad005NDxXgpx6NQoAAAAAAAIQOnKVmI2KkJqTbDMNAQAAAAAAAAIMJEVibnJtXD8gCgEAAAAAAAAAAAEFCxUeIBwTCQMBAAAAAAAAAAAAAAABAQMDAgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "7": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIHCQoKCgoKCgoKCgoKCgkFAQABCyxDR0hISEhISEhISEhIQSMIAQMaYJKam5ubm5ubm5uboKqgVhIDAhFAYWZnZ2dnZ2dnZ2p+rbJXDwEAAw4UFhYWFhYWFhYXH0+akTcHAAAAAQICAgICAgICAgUdZZxoGwIAAAAAAAAAAAAAAAAACTeJjz8LAQAAAAAAAAAAAAAAAAEXYJxsIAQAAAAAAAAAAAAAAAAABTGJlUUMAQAAAAAAAAAAAAAAAAERWKF1IwQAAAAAAAAAAAAAAAAAByh/m00QAQAAAAAAAAAAAAAAAAISTpt7KQYAAAAAAAAAAAAAAAAABih5nFITAgAAAAAAAAAAAAAAAAEQTJuDKwYAAAAAAAAAAAAAAAAABCR1o1wTAgAAAAAAAAAAAAAAAAENRpeONQcAAAAAAAAAAAAAAAAABCBvoWcaAgAAAAAAAAAAAAAAAAELQZSQPAoAAAAAAAAAAAAAAAAAAxxsomseAwAAAAAAAAAAAAAAAAEIOpSXQgsAAAAAAAAAAAAAAAAAAhZjp3MiAwAAAAAAAAAAAAAAAAAIMYydSQ4BAAAAAAAAAAAAAAAAAhVYoHknBgAAAAAAAAAAAAAAAAAEIWmKSBABAAAAAAAAAAAAAAAAAAIUNjsZBAAAAAAAAAAAAAAAAAAAAAQKCQMBAAAAAAAAAAAAAAAAAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "8": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQEBAQAAAAAAAAAAAAAAAAACBgsSFhURCgUCAAAAAAAAAAABBhYwSVxjYllFKxMFAQAAAAAAAQkoW4WXmZWVmJWAUiEHAQAAAAAGKW2ajmdLQkNObJKXXx4EAAAAARVan4lFGQsHBwweUJaWRgwBAAADJn+hVhYDAQAAAQUgbqZpFwEAAAUxjpc8CAAAAAAAARFYp3oeAgAABS6MmkEKAAAAAAACFV+mcxsCAAACIHajYhwEAAAAAQgrep1XEQEAAAEPSZKSVCAKBAUOK2STdy0HAAAAAAQcWJKUaTwlJ0Nxjnc6DgEAAAAAAAUcTYOjnISHmZBkMQ8CAAAAAAAAAQwrYqPBuLy8i0kdBwAAAAAAAAINMGKJkn5qdpKZg1YlCQEAAAABDDZ1kntLJhgfOGKNlmkqCAAAAAUod5xwMxAEAgIIGkaFnmYdAwABDU6fhTYMAgAAAAAEE0qXljsHAAMYa6dhFwIAAAAAAAAEJHqqVA0BBR12pFIPAAAAAAAAAAEZbq1eEAIEHHKnWBIBAAAAAAAAAx90q1gOAQISXah4JwYBAAAAAAINO42bQQgAAAc5kJ5dIwwGBQYIEjRzoHMjBAAAARdTkZdyTDgxND5agpl7OAoAAAAABBlJfJaVi4WHkJiOaDMOAQAAAAAAAxApRl5scG9oVjodCQEAAAAAAAAAAQQLFB0gHxoQCAMAAAAAAAAAAAAAAAEBAwMDAgEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", "9": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQEBAQAAAAAAAAAAAAAAAAADCA4UFhMNBwIAAAAAAAAAAAABCRw3UGBkX08zFwcBAAAAAAAAAQ0wZo6bmpiam4lcKQoBAAAAAAAKNnmah2FKREtkippvLQgAAAAAAyNzoHc4FgkHChY/gp5lHQMAAAELR52JOg4CAAAAAhBCjZJEDAEAAxdpp2QZAgAAAAAAAxpjoG0bAQAEIHyhTQ4BAAAAAAABC0GWiy4FAAUlhZxDCwEAAAAAAAAGLoecPwgABSWFnEUMAQAAAAAAAAQpg6lNCgEEIHyjURAAAAAAAAAABzKRt1YNAQIVZKlxIgQAAAAAAAUYV7HDWw8BAAlAmJhPGQgFBAUJHEeFvL9YDgEAAhxhm5BfOSkmLD1ff4WgrlAKAQAAByVfj5mKenZ8hoRpV4iiRggBAAAABhs9YHV8e3RiRCY5iJY7BwEAAAAAAwsWIioqJBgNDj+VhywEAAAAAAAAAAEDBAQEAQIUWZ9wHAEAAAAAAAAAAAAAAAAABip7mU8PAQAAAAAAAAAAAAAAAAIVVJqALgYAAAAAAAAAAAAAAAEEEUGLmFETAQAAAAAAAwYGBgYHDB5GhZ9oIgUAAAAAAAUfNjgyMztNbZCVZyoIAAAAAAABDEF8i4eIj5eWgVEhCAEAAAAAAAAHKVVqcnJrXkgsEgQBAAAAAAAAAAEIExwgIBwUCwUBAAAAAAAAAAAAAAABAwMDAwEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==", ":": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAQICAQAAAAAAAAAAAAAAAAAAAAELGhkLAQAAAAAAAAAAAAAAAAAACTJsbDMJAAAAAAAAAAAAAAAAAAEPVKysVQ8BAAAAAAAAAAAAAAAAAQs/h4dACwEAAAAAAAAAAAAAAAAAAxQwMBQDAAAAAAAAAAAAAAAAAAAAAgYGAgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAQAAAAAAAAAAAAAAAAAAAAAABAsLBAAAAAAAAAAAAAAAAAAAAAQcQUEdBAAAAAAAAAAAAAAAAAABDUeUlUgNAQAAAAAAAAAAAAAAAAEOUKSkUA8BAAAAAAAAAAAAAAAAAAYnVlcnBgAAAAAAAAAAAAAAAAAAAQgTEwgBAAAAAAAAAAAAAAAAAAAAAAEBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="},o={};
+  for(const k in src){const b=atob(src[k]),a=new Float32Array(b.length);for(let i=0;i<b.length;i++)a[i]=b.charCodeAt(i);o[k]=znorm(a)}return o})();
+function znorm(a){let m=0;for(const x of a)m+=x;m/=a.length;let n=0;const o=new Float32Array(a.length);for(let i=0;i<a.length;i++){o[i]=a[i]-m;n+=o[i]*o[i]}n=Math.sqrt(n)||1;for(let i=0;i<o.length;i++)o[i]/=n;return o}
+const stripCv=document.createElement('canvas');stripCv.width=CLK.SW;stripCv.height=CLK.SH;
+const stripCx=stripCv.getContext('2d',{willReadFrequently:true});
+function clockArea(){return crop||{x:0,y:0,w:v.videoWidth,h:v.videoHeight}}
+function grabStrip(){
+  const r=clockArea(),sx=r.w/CLK.W,sy=r.h/CLK.H;
+  stripCx.drawImage(v,r.x+CLK.SX*sx,r.y+CLK.SY*sy,CLK.SW*sx,CLK.SH*sy,0,0,CLK.SW,CLK.SH);
+  const d=stripCx.getImageData(0,0,CLK.SW,CLK.SH).data,g=new Float32Array(CLK.SW*CLK.SH);
+  for(let i=0;i<g.length;i++)g[i]=d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114;
+  return g;
+}
+function cellAt(g,cx,dx,dy){
+  /* 28×47 の枠を 20×32 に縮める（2×2で平均して読み取りを安定させる） */
+  const o=new Float32Array(CLK.GW*CLK.GH),x0=cx-CLK.CW/2+dx-CLK.SX,y0=CLK.Y0+dy-CLK.SY,fx=CLK.CW/CLK.GW,fy=(CLK.Y1-CLK.Y0)/CLK.GH;
+  const px=(x,y)=>{x=Math.max(0,Math.min(CLK.SW-1.001,x));y=Math.max(0,Math.min(CLK.SH-1.001,y));const ix=x|0,iy=y|0,ax=x-ix,ay=y-iy,i=iy*CLK.SW+ix;
+    return g[i]*(1-ax)*(1-ay)+g[i+1]*ax*(1-ay)+g[i+CLK.SW]*(1-ax)*ay+g[i+CLK.SW+1]*ax*ay};
+  for(let j=0;j<CLK.GH;j++)for(let i=0;i<CLK.GW;i++){let s=0;
+    for(const a of[.25,.75])for(const b of[.25,.75])s+=px(x0+(i+a)*fx-.5,y0+(j+b)*fy-.5);
+    o[j*CLK.GW+i]=s/4}
+  return znorm(o);
+}
+const dot=(a,b)=>{let s=0;for(let i=0;i<a.length;i++)s+=a[i]*b[i];return s};
+function readClock(g){
+  const best=cx=>{let b={s:-9,d:'?'};for(let dx=-3;dx<=3;dx++)for(let dy=-3;dy<=3;dy++){const c=cellAt(g,cx,dx,dy);
+    for(const d of'0123456789'){const s=dot(c,CLK_T[d]);if(s>b.s)b={s,d}}}return b};
+  const r=CLK.CX.map(best),txt=r.map(x=>x.d).join(''),sc=r.map(x=>x.s);
+  const hh=+txt.slice(0,2),mm=+txt.slice(2),mean=sc.reduce((a,b)=>a+b)/4,min=Math.min(...sc);
+  if(!(hh<24&&mm<60&&mean>=0.65&&min>=0.5))return null;
+  return {hhmm:txt.slice(0,2)+':'+txt.slice(2),conf:mean};
+}
+function readClockAvg(sum,n){if(!sum||!n)return null;const g=new Float32Array(sum.length);for(let i=0;i<g.length;i++)g[i]=sum[i]/n;return readClock(g)}
+
+const big=document.createElement('canvas');
+function grabFull(){
+  const r=R();big.width=r.w;big.height=r.h;
+  big.getContext('2d').drawImage(v,r.x,r.y,r.w,r.h,0,0,r.w,r.h);
+  return new Promise((r,ng)=>{const tm=setTimeout(()=>ng(new Error('encode-timeout')),15000);big.toBlob(b=>{clearTimeout(tm);r(b)},'image/jpeg',0.95)});
+}
+async function capture(t){
+  const blob=await grabFull();if(!blob)return null;
+  return {t,blob,url:URL.createObjectURL(blob),w:big.width,h:big.height,name:vidName+'_'+stamp(t)+'.jpg'};
+}
+function pushFrame(c,extra){
+  const f=Object.assign({id:++uid,sel:false,orig:c.t,edited:false},c,extra||{});
+  frames.push(f);frames.sort((a,b)=>a.t-b.t);render();return f;
+}
+async function addFrame(t,extra){
+  let clk=null;try{clk=readClock(grabStrip())}catch(e){}
+  const c=await capture(t);return c?pushFrame(c,Object.assign({clock:clk&&clk.hhmm,clockConf:clk?clk.conf:0},extra||{})):null}
+function replaceFrame(f,c,edited){
+  URL.revokeObjectURL(f.url);Object.assign(f,c);if(edited!==undefined)f.edited=edited;render();
+}
+$('shoot').onclick=async()=>{
+  if(running)return;if(!(await ensureVideo()))return;v.pause();
+  const f=$('flash');f.classList.add('go');requestAnimationFrame(()=>requestAnimationFrame(()=>f.classList.remove('go')));
+  await addFrame(v.currentTime);toast('写真にしました（'+fmt(v.currentTime)+'）');
+};
+
+/* 自動抽出：場面が終わるたびに写真を出す。止めても続きから再開できる */
+const sm=document.createElement('canvas');sm.width=160;sm.height=90;
+const sx=sm.getContext('2d',{willReadFrequently:true});
+function sample(){
+  const r=R();sx.drawImage(v,r.x,r.y,r.w,r.h,0,0,160,90);const d=sx.getImageData(0,0,160,90).data;
+  const g=new Float32Array(160*90);for(let i=0;i<g.length;i++)g[i]=d[i*4]*.299+d[i*4+1]*.587+d[i*4+2]*.114;
+  let s=0,n=0;for(let y=1;y<89;y++)for(let x=1;x<159;x++){const i=y*160+x;const l=4*g[i]-g[i-1]-g[i+1]-g[i-160]-g[i+160];s+=l*l;n++}
+  const hist=new Float32Array(32);for(let i=0;i<g.length;i++)hist[Math.min(31,g[i]>>3)]++;
+  let mean=0;for(let i=0;i<g.length;i++)mean+=g[i];mean/=g.length;
+  return {sharp:s/n,hist,mean,small:g};
+}
+
+function diffParts(a,b){let h=0;for(let i=0;i<32;i++)h+=Math.abs(a.hist[i]-b.hist[i]);h/=a.small.length*2;let p=0;for(let i=0;i<a.small.length;i+=7)p+=Math.abs(a.small[i]-b.small[i]);p/=(a.small.length/7)*255;return [h,p]}
+let scan=null;
+const STEP=0.2;
+const secs=s=>{s=Math.round(s);return s<60?s+'秒':Math.floor(s/60)+'分'+String(s%60).padStart(2,'0')+'秒'};
+function showProg(state){
+  if(!scan)return;const dur=scan.dur,done=Math.min(scan.t,dur);
+  const pct=scan.finished?100:Math.min(99,Math.floor(done/dur*100));
+  const el=scan.elapsed+(running?(performance.now()-scan.runStart)/1000:0);
+  $('pPct').textContent=pct;$('barI').style.width=pct+'%';
+  $('pState').textContent=state;
+  $('pPos').textContent=fmt(done).replace(/\.\d+$/,'')+' / '+fmt(dur).replace(/\.\d+$/,'');
+  $('pScene').textContent=scan.n;
+  $('pShot').textContent=frames.filter(f=>f.scene).length+'枚';
+  $('pEl').textContent=secs(el);
+  let rem='—';
+  if(running){const ran=done-scan.runFrom,rt=(performance.now()-scan.runStart)/1000;rem=ran>1&&rt>1?'約'+secs((dur-done)/(ran/rt)):'計算中'}
+  else if(scan.finished)rem='完了';
+  $('pRem').textContent=rem;
+}
+/* 実行ごとに番号を振り、止めた・中断した古い処理は、待ちから戻っても何もせずに終わる */
+let runTok=0;const STALE=new Error('stale');
+const chk=my=>{if(my!==runTok)throw STALE};
+async function finishScene(sc,my){
+  if(!sc||!sc.cands.length)return;
+  const best=sc.cands.reduce((a,b)=>b.sharp>a.sharp?b:a);
+  const f=sc.frameId&&frames.find(x=>x.id===sc.frameId);
+  if(f&&(f.edited||Math.abs(f.orig-best.t)<0.001))return;
+  await seekTo(best.t);chk(my);
+  const c=await capture(best.t);chk(my);if(!c)return;
+  if(f){replaceFrame(f,c);f.orig=best.t}
+  const clk=readClockAvg(sc.clkSum,sc.clkN);
+  if(f){if(clk&&!f.clockManual){f.clock=clk.hhmm;f.clockConf=clk.conf}render()}
+  else sc.frameId=pushFrame(c,{scene:sc.no,cands:sc.cands,clock:clk&&clk.hhmm,clockConf:clk?clk.conf:0}).id;
+}
+function setRunUI(on){
+  running=on;
+  $('auto').disabled=on;$('shoot').disabled=on;$('other').disabled=on;$('sens').disabled=on;$('maxLen').disabled=on;$('cropOn').disabled=on;
+  $('stop').style.display=on?'':'none';
+  $('resume').style.display=!on&&scan&&!scan.finished?'':'none';
+  $('auto').textContent=on?'取り出しています…':scan?'最初からやり直す':'自動で取り出す';
+  $('auto').className=scan&&!on?'ghost':'go';
+  $('autoHint').style.display=scan?'none':'';
+  if(on)$('results').classList.add('on');
+}
+const W=3;
+async function evalUpTo(partial,my){
+  const S=scan.smp,last=S.length-1;
+  while(scan.ev<=last){
+    const i=scan.ev,x=S[i];
+    if(!partial&&i+W>last)break;
+    let cut=!scan.cur;
+    if(!cut&&x.score>=scan.th){
+      const win=[];let isMax=true;
+      for(let k=i-W;k<=i+W;k++){if(k===i||k<1||k>last)continue;win.push(S[k].score);if(S[k].score>x.score)isMax=false}
+      win.sort((p,q)=>p-q);const med=win.length?win[win.length>>1]:0;
+      if(isMax&&x.score>=scan.ratio*med)cut=true;
+    }
+    if(!cut&&scan.maxLen&&x.t-scan.cur.start>=scan.maxLen-0.001)cut=true;
+    if(cut){
+      if(scan.cur){showProg('写真にしています');await finishScene(scan.cur,my)}
+      scan.cur={no:++scan.n,start:x.t,cands:[],clkSum:null,clkN:0};
+    }
+    if(x.thumb)scan.cur.cands.push({t:x.t,sharp:x.sharp,thumb:x.thumb});
+    /* 時計の部分はシーンの中で足し合わせる（背景がぼけて、動かない時計の文字だけがはっきりする） */
+    if(x.strip){const c=scan.cur;if(!c.clkSum)c.clkSum=new Float32Array(x.strip.length);for(let i=0;i<x.strip.length;i++)c.clkSum[i]+=x.strip[i];c.clkN++;x.strip=null}
+    scan.ev++;
+  }
+}
+async function runAuto(){
+  /* 中断のあとは、動画が壊れていなくても念のため読み直してから再開する */
+  if(!(await ensureVideo(!!scan.interrupted)))return;
+  const my=++runTok;
+  v.pause();scan.interrupted=false;scan.reason=null;setRunUI(true);$('pReason').hidden=true;$('prog').classList.add('on');
+  scan.runStart=performance.now();scan.runFrom=scan.t;
+  const dur=scan.dur;
+  showProg('シーンを探しています');
+  /* 再生位置が動かない・動画が読めない・書き出しが終わらないときは、動画を読み直して自動でやり直す。
+     同じところで続けて失敗したら（2回まで）中断する */
+  const RETRY=2;let tries=0;
+  for(;;){
+    try{
+      while(scan.t<dur-0.02&&running){
+        const t=scan.t;await seekTo(t);chk(my);const s=sample();let strip=null;try{strip=grabStrip()}catch(e){}
+        const score=scan.prevS?diffParts(scan.prevS,s).reduce((p,q)=>p+q):0;
+        scan.maxD=Math.max(scan.maxD,score);
+        if(window.__dbg)window.__dbg.push([t,score]);
+        const ok=s.mean>12&&s.mean<245;
+        scan.smp.push({t,score,sharp:s.sharp,thumb:ok?sm.toDataURL('image/jpeg',0.7):null,strip});
+        scan.prevS=s;scan.t=t+STEP;
+        await evalUpTo(false,my);
+        tries=0;
+        showProg('シーンを探しています');
+      }
+      if(!scan.interrupted&&running){
+        await evalUpTo(true,my);
+        showProg('写真にしています');
+        await finishScene(scan.cur,my);
+      }
+      break;
+    }catch(e){
+      if(e===STALE)return;
+      const m=e&&e.message,recoverable=m==='seek-timeout'||m==='video-error'||m==='encode-timeout';
+      if(recoverable&&tries<RETRY&&running&&my===runTok){
+        tries++;scan.retried=(scan.retried||0)+1;
+        showProg('動画が反応しないので、読み直してやり直しています（'+tries+'回目）');
+        console.warn('retry',tries,e);
+        const ok=await ensureVideo(true);
+        if(my!==runTok)return;
+        if(ok&&running)continue;
+      }
+      scan.interrupted=true;
+      if(!scan.reason){const r=errReason(e);if(recoverable&&tries>=RETRY)r.text+='（'+RETRY+'回読み直しても直りませんでした）';scan.reason=r}
+      console.error(e);break;
+    }
+  }
+  if(my!==runTok)return;
+  endRun();
+}
+/* 処理を終わった状態にして、画面を「停止」にする（中断のときはその場ですぐ呼ぶ） */
+function endRun(){
+  runTok++;
+  scan.elapsed+=(performance.now()-scan.runStart)/1000;
+  if(!scan.interrupted&&scan.t>=scan.dur-0.02){scan.finished=true;scan.cur=null}
+  setRunUI(false);
+  let msg=scan.finished?'完了しました':scan.interrupted?'中断しました。「続きから再開」で続けられます。':'止めました。ここまでの写真は保存できます。';
+  if(scan.interrupted&&scan.reason){const r=scan.reason;$('pReason').innerHTML='<b>理由</b>'+esc(r.text)+(r.detail?'<small>'+esc(r.detail)+'</small>':'');$('pReason').hidden=false}
+  if(scan.finished&&scan.dur>4&&(scan.maxD<0.005||scan.n<=1)){
+    msg=scan.maxD<0.005?'動画のコマを読み取れなかったかもしれません。別のブラウザ（SafariやChrome）で開くと、うまくいくことがあります。':'シーンの切り替わりが見つかりませんでした。「詳しい設定」で区切りを細かくして、もう一度試してみてください。';
+  }
+  showProg(msg);
+  if(!document.hidden)toast(scan.finished?'すべてのシーンをチェックしました':scan.interrupted?'中断しました。理由は進行状況のところに出ています。':'止めました。「続きから再開」で続けられます。');
+}
+$('auto').onclick=async()=>{
+  if(running||!v.duration)return;
+  if(scan&&frames.some(f=>f.scene)&&!(await ask('最初からやり直しますか？','自動で取り出した写真は消えます。自分で撮った写真は残ります。','やり直す')))return;
+  if(running)return;
+  frames.filter(f=>f.scene).forEach(f=>URL.revokeObjectURL(f.url));
+  frames=frames.filter(f=>!f.scene);render();
+  {const k=$('sens').value-1;scan={t:0.05,dur:v.duration,n:0,cur:null,prevS:null,smp:[],ev:0,elapsed:0,finished:false,th:0.08+k*0.03,ratio:1.4+k*0.1,maxLen:+$('maxLen').value,maxD:0}}
+  runAuto();
+};
+/* 確認ダイアログ（ブラウザの確認画面は使えないので、ページの中に出す） */
+function ask(title,msg,yes){
+  return new Promise(res=>{
+    $('dlgT').textContent=title;$('dlgM').textContent=msg;$('dlgYes').textContent=yes;
+    const d=$('dlg');d.classList.add('on');$('dlgNo').focus();
+    const done=v=>{d.classList.remove('on');$('dlgYes').onclick=$('dlgNo').onclick=d.onclick=null;document.removeEventListener('keydown',key);res(v)};
+    const key=e=>{if(e.key==='Escape')done(false)};
+    $('dlgYes').onclick=()=>done(true);$('dlgNo').onclick=()=>done(false);
+    d.onclick=e=>{if(e.target===d)done(false)};document.addEventListener('keydown',key);
+  });
+}
+$('resume').onclick=()=>{if(!running&&scan&&!scan.finished)runAuto()};
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&scan&&scan.interrupted&&!running)toast('中断しました。理由は進行状況のところに出ています。')});
+$('stop').onclick=()=>{
+  if(!running)return;running=false;showProg('止めています…');
+  /* 今の場面の写真を仕上げてから止まる。3秒たっても終わらなければ、その場で止める */
+  const t0=runTok;setTimeout(()=>{if(runTok===t0&&scan&&!scan.finished)endRun()},3000);
+};
+
+/* 一覧 */
+
+/* ===== 写真の撮影日時 =====
+   日付は「撮影日」から、時刻は映像の時計から。読めなかった写真は前後の写真の時刻を使う。
+   時刻が前より大きく戻ったら（夜中の0時をまたいだ）、日付を1日進める。同じ分の写真は秒をずらして順番を保つ */
+const pad=n=>String(n).padStart(2,'0');
+function clockUsable(){
+  const auto=frames.filter(f=>!f.clockManual),good=auto.filter(f=>f.clock&&f.clockConf>=0.8).length;
+  return good>=Math.max(1,Math.ceil(auto.length*0.4));
+}
+function photoTimes(){
+  const out=new Map(),ds=$('shootDate').value;if(!ds)return out;
+  const ok=clockUsable(),L=frames.slice().sort((a,b)=>a.t-b.t);
+  const own=f=>f.clockManual||(ok&&f.clock?f.clock:null);
+  const known=L.map(own);
+  let [Y,M,D]=ds.split('-').map(Number),prevMin=null,prevSec=-1;
+  L.forEach((f,i)=>{
+    let hm=known[i],guess=!hm;
+    if(!hm){for(let j=i-1;j>=0&&!hm;j--)hm=known[j];for(let j=i+1;j<L.length&&!hm;j++)hm=known[j]}
+    if(!hm)return;
+    const [h,m]=hm.split(':').map(Number),mins=h*60+m;
+    if(prevMin!==null&&mins<prevMin-180){const d=new Date(Y,M-1,D+1);Y=d.getFullYear();M=d.getMonth()+1;D=d.getDate()}
+    const sec=prevMin===mins?Math.min(59,prevSec+1):0;
+    prevMin=mins;prevSec=sec;
+    out.set(f.id,{exif:`${Y}:${pad(M)}:${pad(D)} ${pad(h)}:${pad(m)}:${pad(sec)}`,file:`${Y}${pad(M)}${pad(D)}_${pad(h)}${pad(m)}${pad(sec)}`,
+      date:new Date(Y,M-1,D,h,m,sec),hm:pad(h)+':'+pad(m),guess});
+  });
+  return out;
+}
+/* JPEGに撮影日時（Exif）を書き込む。時差は入れず、映像の時計のままの時刻にする */
+function exifSeg(str){
+  const enc=new TextEncoder(),ascii=x=>{const a=new Uint8Array(20);a.set(enc.encode(x).slice(0,19));return a};
+  const buf=new ArrayBuffer(140),dv=new DataView(buf),u8=new Uint8Array(buf);
+  u8.set([0x49,0x49,0x2A,0x00]);dv.setUint32(4,8,true);
+  const ent=(o,tag,type,cnt,val)=>{dv.setUint16(o,tag,true);dv.setUint16(o+2,type,true);dv.setUint32(o+4,cnt,true);dv.setUint32(o+8,val,true)};
+  dv.setUint16(8,2,true);ent(10,0x0132,2,20,38);ent(22,0x8769,4,1,58);dv.setUint32(34,0,true);u8.set(ascii(str),38);
+  dv.setUint16(58,3,true);ent(60,0x9000,7,4,0);u8.set(enc.encode('0232'),68);ent(72,0x9003,2,20,100);ent(84,0x9004,2,20,120);dv.setUint32(96,0,true);
+  u8.set(ascii(str),100);u8.set(ascii(str),120);
+  const head=new Uint8Array([0xFF,0xE1,0,0,0x45,0x78,0x69,0x66,0,0]);new DataView(head.buffer).setUint16(2,2+6+140);
+  return [head,u8];
+}
+async function exportItem(f,times){
+  const tm=(times||photoTimes()).get(f.id);
+  if(!tm)return {name:f.name,blob:f.blob,date:null};
+  const b=new Uint8Array(await f.blob.arrayBuffer());
+  const blob=new Blob([b.slice(0,2),...exifSeg(tm.exif),b.slice(2)],{type:'image/jpeg'});
+  return {name:tm.file+'.jpg',blob,date:tm.date};
+}
+$('shootDate').addEventListener('change',()=>{render();if(cur&&$('prev').classList.contains('on'))info()});
+function render(){
+  const box=$('frames');const times=photoTimes();
+  box.innerHTML=frames.length?frames.map(f=>`<div class="fr${f.sel?' sel':''}" data-id="${f.id}"><img src="${f.url}" alt="${fmt(f.t)}の写真" loading="lazy">${(()=>{const tm=times.get(f.id);return tm?`<span class="t${tm.guess?' g':''}">${tm.hm}</span>`:`<span class="t">${fmt(f.t)}</span>`})()}${f.scene?`<span class="a${f.edited?' e':''}">${f.edited?'調整済':'自動'} #${f.scene}</span>`:''}<span class="ck" data-ck="1">${f.sel?'✓':''}</span></div>`).join('')
+    :'<div class="empty">シーンが見つかると、ここに写真が並びます</div>';
+  const ok=clockUsable(),anyClk=frames.some(f=>f.clock||f.clockManual);
+  $('clockNote').textContent=!$('shootDate').value?'撮影日を入れると、写真に撮影日時を書き込みます。映像の時計から時刻も読み取ります':ok?'時刻は映像の時計から読み取っています':frames.some(f=>f.clockManual)?'時刻は、手で入れたものと、その前後から推定しています':frames.length?'映像の時計を読み取れなかったので、時刻は書き込みません':'';
+  const n=frames.filter(f=>f.sel).length;
+  $('results').classList.toggle('on',frames.length>0||running);
+  $('count').textContent=frames.length+'枚'+(n?'・'+n+'枚選択中':'');
+  $('save').disabled=!frames.length;
+  $('save').textContent=n?'選んだ'+n+'枚を保存':'すべて保存（'+frames.length+'枚）';
+  $('del').style.display=n?'':'none';
+  $('all').textContent=frames.length&&n===frames.length?'選択を解除':'すべて選択';
+  if(scan)$('pShot').textContent=frames.filter(f=>f.scene).length+'枚';
+}
+
+/* 確認と差し替え */
+const pcv=$('pcv'),pcx=pcv.getContext('2d');
+let pT=0;
+let drawTok=0;
+function drawImgBlob(f){const my=++drawTok,im=new Image();im.onload=()=>{if(my!==drawTok)return;pcv.width=im.naturalWidth;pcv.height=im.naturalHeight;pcx.drawImage(im,0,0)};im.src=f.url}
+const dirty=()=>!!cur&&!cur.gone&&Math.abs(pT-cur.t)>0.001;
+function info(){
+  $('prev').classList.toggle('gone',!!cur.gone);
+  $('psave').disabled=!!cur.gone;$('pdel').textContent=cur.gone?'削除を取り消す':'削除';
+  $('edit').style.display=cur.gone||running?'none':'';
+  /* 撮影日が入っているときだけ、写真の右下に撮影時刻を出す（タップで直せる） */
+  const hasDate=!!$('shootDate').value;$('ptag').style.display=cur.gone||!hasDate?'none':'';
+  if(!cur.gone&&hasDate){const tm=photoTimes().get(cur.id),hm=cur.clockManual||(tm?tm.hm:'');
+    $('ptagTime').textContent=hm||'--:--';$('pclock').value=hm;$('ptagGuess').textContent=!cur.clockManual&&tm&&tm.guess?'（推定）':''}
+  if(cur.gone){$('pinfo').innerHTML='<span>'+fmt(cur.t)+'</span>';navState();return}
+  const moved=Math.abs(pT-cur.t)>0.001;
+  const sz=cur.blob.size>1048576?(cur.blob.size/1048576).toFixed(1)+'MB':Math.round(cur.blob.size/1024)+'KB';
+  const parts=moved?['表示中 '+fmt(pT)+'（未確定）','今の写真 '+fmt(cur.t)]:[fmt(cur.t),cur.w+'×'+cur.h+'ピクセル',sz];
+  if(cur.scene)parts.push('シーン #'+cur.scene);
+  $('pinfo').innerHTML=parts.map(p=>'<span>'+p+'</span>').join('');
+  $('prep').disabled=!moved;$('preset').disabled=!(cur.scene&&Math.abs(cur.t-cur.orig)>0.001)&&!moved;
+  document.querySelectorAll('#cands button').forEach(b=>b.classList.toggle('on',Math.abs(+b.dataset.t-pT)<0.001));
+  $('pwarn').hidden=!moved;navState();
+}
+async function showAt(t){
+  if(!(await ensureVideo()))return;
+  t=Math.min(Math.max(0,t),(v.duration||0)-0.001);pT=t;
+  await seekTo(t);const r=R();pcv.width=r.w;pcv.height=r.h;pcx.drawImage(v,r.x,r.y,r.w,r.h,0,0,r.w,r.h);info();
+}
+function openPrev(f){
+  leaveGone();
+  cur=f;pT=f.t;drawImgBlob(f);
+  $('pbusy').style.display=running?'':'none';
+  const cs=(f.cands||[]).slice().sort((a,b)=>b.sharp-a.sharp).slice(0,8).sort((a,b)=>a.t-b.t);
+  $('cands').style.display=cs.length?'':'none';
+  $('cands').innerHTML=cs.map(c=>`<button data-t="${c.t}"><img src="${c.thumb}" alt=""><span>${fmt(c.t)}</span></button>`).join('');
+  $('prev').classList.add('on');info();navState();
+}
+/* 前後の写真へ移る（ボタン・左右スワイプ・キーボードの←→） */
+const ordered=()=>frames.slice().sort((a,b)=>a.t-b.t);
+function neighbors(){
+  const L=ordered();let i=L.indexOf(cur);
+  if(i>=0)return {L,i,prev:L[i-1],next:L[i+1]};
+  /* 削除した写真を表示中：時間の前後で隣を決める */
+  const k=L.findIndex(f=>f.t>cur.t);const p=k<0?L.length:k;
+  return {L,i:-1,prev:L[p-1],next:L[p]};
+}
+function navState(){
+  const n=neighbors(),lock=dirty();
+  $('pcount').textContent=n.i>=0?(n.i+1)+' / '+n.L.length:'削除済み';
+  $('pprev').disabled=lock||!n.prev;$('pnext').disabled=lock||!n.next;$('pclose').disabled=lock;
+}
+function blocked(){if(dirty()){toast('「この位置で差し替え」か「元に戻す」を押してから移動してください');return true}return false}
+function go(d){
+  if(!cur||blocked())return;const n=neighbors(),t=d<0?n.prev:n.next;
+  if(t)openPrev(t);
+}
+function leaveGone(){if(cur&&cur.gone){URL.revokeObjectURL(cur.url);cur.gone=false;cur=null}}
+$('pprev').onclick=()=>go(-1);$('pnext').onclick=()=>go(1);
+document.addEventListener('keydown',e=>{
+  if(!$('prev').classList.contains('on'))return;
+  if(e.key==='ArrowLeft'){e.preventDefault();go(-1)}
+  else if(e.key==='ArrowRight'){e.preventDefault();go(1)}
+  else if(e.key==='Escape'){if(!blocked())closePrev()}
+});
+{let sx=0,sy=0,on=false;
+  pcv.addEventListener('pointerdown',e=>{sx=e.clientX;sy=e.clientY;on=true});
+  pcv.addEventListener('pointerup',e=>{if(!on)return;on=false;const dx=e.clientX-sx,dy=e.clientY-sy;
+    if(Math.abs(dx)>40&&Math.abs(dx)>Math.abs(dy)*1.5)go(dx<0?1:-1)});
+  pcv.addEventListener('pointercancel',()=>{on=false});
+}
+$('frames').addEventListener('click',e=>{
+  const el=e.target.closest('.fr');if(!el)return;const f=frames.find(x=>x.id==el.dataset.id);
+  if(e.target.closest('[data-ck]')){f.sel=!f.sel;render();return}
+  openPrev(f);
+});
+$('cands').addEventListener('click',e=>{const b=e.target.closest('button');if(b&&!running)showAt(+b.dataset.t)});
+document.querySelectorAll('[data-n]').forEach(b=>b.onclick=()=>{if(!running)showAt(pT+ +b.dataset.n)});
+$('prep').onclick=async()=>{
+  if(running||!cur)return;await seekTo(pT);const c=await capture(pT);if(!c)return;
+  replaceFrame(cur,c,!!cur.scene&&Math.abs(pT-cur.orig)>0.001);drawImgBlob(cur);info();toast('差し替えました（'+fmt(pT)+'）');
+};
+$('preset').onclick=async()=>{
+  if(running||!cur)return;
+  if(cur.scene&&Math.abs(cur.t-cur.orig)>0.001){await seekTo(cur.orig);const c=await capture(cur.orig);if(c){replaceFrame(cur,c,false)}}
+  pT=cur.t;drawImgBlob(cur);info();
+};
+const closePrev=()=>{leaveGone();$('prev').classList.remove('on');frames.sort((a,b)=>a.t-b.t);render()};
+$('pclose').onclick=closePrev;
+$('prev').addEventListener('click',e=>{if(e.target.id==='prev'&&!blocked())closePrev()});
+$('pclock').addEventListener('click',e=>{try{e.target.showPicker&&e.target.showPicker()}catch(_){}});
+$('pclock').addEventListener('change',()=>{if(!cur||cur.gone)return;cur.clockManual=$('pclock').value||null;render();info()});
+$('pdel').onclick=()=>{
+  if(!cur)return;
+  if(cur.gone){cur.gone=false;frames.push(cur);frames.sort((a,b)=>a.t-b.t);render();pT=cur.t;drawImgBlob(cur);info();toast('削除を取り消しました');return}
+  /* 隣には移らず、その場で「削除済み」にする（もう一度押すと取り消し） */
+  pT=cur.t;frames=frames.filter(f=>f!==cur);cur.gone=true;cur.sel=false;render();info();
+}
+$('psave').onclick=async()=>{if(!cur)return;const x=await exportItem(cur);saveBlob(x.name,x.blob,x.date)};
+$('all').onclick=()=>{const all=frames.every(f=>f.sel);frames.forEach(f=>f.sel=!all);render()};
+$('del').onclick=()=>{frames.filter(f=>f.sel).forEach(f=>URL.revokeObjectURL(f.url));frames=frames.filter(f=>!f.sel);render()};
+
+/* claude.ai の中では downloads 機能で保存。ダウンロードしたHTMLなど単体で開いたときは、
+   共有メニュー（https のときに使える）か、ふつうのダウンロードで保存する */
+const standalone=!(window.claude&&window.claude.use);
+const asFile=(name,blob,date)=>new File([blob],name,{type:/\.zip$/.test(name)?'application/zip':'image/jpeg',lastModified:date?+date:Date.now()});
+const canShareFiles=files=>{try{return !!(navigator.canShare&&navigator.share&&navigator.canShare({files}))}catch(e){return false}};
+function plainDownload(name,blob){
+  const u=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(u),60000);
+}
+async function shareFiles(files){
+  try{await navigator.share({files});toast('保存しました');return true}
+  catch(e){if(e&&e.name==='AbortError'){toast('保存を取りやめました');return true}return false}
+}
+async function saveBlob(name,blob,date){
+  if(standalone){
+    const f=[asFile(name,blob,date)];
+    if(canShareFiles(f)&&await shareFiles(f))return;
+    plainDownload(name,blob);toast('ダウンロードしました');return;
+  }
+  if(!downloads){toast('この画面では保存できません。claude.aiのページで開いてください。');return}
+  try{await downloads.save({filename:name,data:blob});toast('保存しました')}
+  catch(e){const c=e&&e.code;toast(c==='declined'?'保存を取りやめました':c==='rate_limited'?'少し待ってから、もう一度試してみてください':'保存できませんでした')}
+}
+/* ZIP（無圧縮）を自前で作る：外部の部品に頼らないので、オフラインでも使える */
+const CRC=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+function crc32(u){let c=0xFFFFFFFF;for(let i=0;i<u.length;i++)c=CRC[(c^u[i])&255]^(c>>>8);return (c^0xFFFFFFFF)>>>0}
+async function makeZip(items){
+  const enc=new TextEncoder(),parts=[],cen=[];let off=0;
+  for(const it of items){
+    const d=it.date||new Date(),dt=((d.getFullYear()-1980)<<9|(d.getMonth()+1)<<5|d.getDate()),tm=(d.getHours()<<11|d.getMinutes()<<5|(d.getSeconds()>>1));
+    const data=new Uint8Array(await it.blob.arrayBuffer()),name=enc.encode(it.name),crc=crc32(data);
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(8,0,true);
+    h.setUint16(10,tm,true);h.setUint16(12,dt,true);h.setUint32(14,crc,true);h.setUint32(18,data.length,true);h.setUint32(22,data.length,true);
+    h.setUint16(26,name.length,true);h.setUint16(28,0,true);
+    parts.push(h.buffer,name,data);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(10,0,true);
+    c.setUint16(12,tm,true);c.setUint16(14,dt,true);c.setUint32(16,crc,true);c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);
+    c.setUint16(28,name.length,true);c.setUint32(42,off,true);
+    cen.push(c.buffer,name);
+    off+=30+name.length+data.length;
+  }
+  const cs=cen.reduce((a,x)=>a+(x.byteLength),0),e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true);e.setUint16(8,items.length,true);e.setUint16(10,items.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+  return new Blob([...parts,...cen,e.buffer],{type:'application/zip'});
+}
+$('save').onclick=async()=>{
+  let sel=frames.filter(f=>f.sel);if(!sel.length)sel=frames.slice();if(!sel.length)return;
+  const times=photoTimes(),items=[];for(const f of sel.sort((a,b)=>a.t-b.t))items.push(await exportItem(f,times));
+  if(items.length===1){saveBlob(items[0].name,items[0].blob,items[0].date);return}
+  /* 単体で開いていて共有メニューが使えるなら、ZIPにせず写真のまま渡す（iPhoneでまとめて「画像を保存」できる） */
+  if(standalone){const fs=items.map(x=>asFile(x.name,x.blob,x.date));if(canShareFiles(fs)&&await shareFiles(fs))return}
+  toast('ZIPファイルを作っています…');
+  const out=await makeZip(items);
+  saveBlob(vidName+'_写真'+sel.length+'枚.zip',out);
+};
+
+render();
+}
+</script>
+</body>
+</html>
